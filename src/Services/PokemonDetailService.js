@@ -40,20 +40,34 @@ const getAbilitiesAndWeaknesses = async (pokemonUrl) => {
   return { abilities, weaknesses };
 };
 
-// (Reemplazo) Obtener la cadena evolutiva usando speciesData ya cargado
 const getEvolutionChainFromSpecies = async (speciesData) => {
   if (!speciesData?.evolution_chain?.url) return [];
-  const { data: evoData } = await axios.get(speciesData.evolution_chain.url);
-  const chain = [];
-  let current = evoData.chain;
 
+  const { data: evoData } = await axios.get(speciesData.evolution_chain.url);
+  const names = [];
+
+  // Extrae todos los nombres en la cadena (aunque tenga varias ramas)
+  let current = evoData.chain;
   while (current) {
-    chain.push({ name: current.species.name });
+    names.push(current.species.name);
     current = current.evolves_to?.[0];
   }
 
+  // Pide todas las imágenes en paralelo
+  const chain = await Promise.all(
+    names.map(async (name) => {
+      try {
+        const { data } = await axios.get(`https://pokeapi.co/api/v2/pokemon/${name}`);
+        return { name, image: data.sprites.front_default };
+      } catch {
+        return { name, image: null };
+      }
+    })
+  );
+
   return chain;
 };
+
 
 // (Actualizado) Función principal: añade generación y evita llamadas duplicadas
 export const fetchPokemonFullData = async (nameOrId) => {
