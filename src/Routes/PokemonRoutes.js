@@ -7,5 +7,6 @@ router.get("/", getPokemons);
 router.get("/filter", getPokemonsFiltered);
 router.delete("/cache", clearCacheController);
 router.get("/cache/stats", getCacheStatsController);
+router.get("/:id", getPokemonFull);
 
 export default router;
