@@ -1,13 +1,13 @@
-import { fetchPokemonFullData } from "../Services/PokemonDetailService.js";
+import { fetchPokemonInfo } from "../Services/Detail of Pokemons/PokemonDetailService.js";
 
-// Controlador para traer el Pokémon seleccionado por nombre o ID
-export const getPokemonFull = async (req, res) => {
+// ✅ GET /api/pokemons/:idOrName
+export const getPokemonDetail = async (req, res) => {
   try {
-    const { id } = req.params; // id puede ser nombre o número
-    const pokemon = await fetchPokemonFullData(id);
-    res.json(pokemon);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: error.message });
+    const { idOrName } = req.params;
+    const info = await fetchPokemonInfo(idOrName);
+    res.json(info);
+  } catch (err) {
+    console.error("❌ Error en getPokemonDetail:", err.message);
+    res.status(500).json({ error: "Error obteniendo el detalle del Pokémon" });
   }
 };
