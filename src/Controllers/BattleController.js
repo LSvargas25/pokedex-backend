@@ -22,11 +22,28 @@ export const startBattle = async (req, res) => {
 };
 
 // ✅ POST /api/battle/:battleId/attack
+// body: { moveIndex: 0|1|2, outcome: "miss"|"hit"|"perfect" }
 export const attack = async (req, res) => {
   try {
-    const result = await resolveAttack(req.params.battleId, req.user.id);
+    const { moveIndex, outcome } = req.body ?? {};
+
+    if (moveIndex === undefined || outcome === undefined) {
+      return res
+        .status(400)
+        .json({ error: "moveIndex y outcome son obligatorios en el body" });
+    }
+
+    const result = await resolveAttack(
+      req.params.battleId,
+      req.user.id,
+      moveIndex,
+      outcome
+    );
     res.json(result);
   } catch (err) {
+    if (err.status === 400) {
+      return res.status(400).json({ error: err.message });
+    }
     if (err.status === 404) {
       return res.status(404).json({ error: err.message });
     }
