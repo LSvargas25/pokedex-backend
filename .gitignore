@@ -18,5 +18,6 @@ Thumbs.db
 # Editor/AI tool folders
 .vscode/*
 !.vscode/extensions.json
+.vs/
 .claude/
 .cursor/
