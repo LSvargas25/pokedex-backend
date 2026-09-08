@@ -110,6 +110,7 @@ export const fetchPokemonInfo = async (idOrName) => {
     height: data.height,
     weight: data.weight,
     image: data.sprites.other["official-artwork"].front_default,
+    sprite: data.sprites?.front_default ?? null, // sprite pixelado, lo usa la batalla para dibujar
     types,
     color: colors[0] ?? null,
     colors,
