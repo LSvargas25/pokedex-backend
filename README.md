@@ -144,22 +144,56 @@ It picks 3 random rivals (Pokédex ids 1–300) and responds with:
   "opponentTeam": [ /* same fighter shape */ ],
   "playerActiveIndex": 0,
   "opponentActiveIndex": 0,
+  "moves": [
+    { "name": "Golpe rápido", "powerMultiplier": 0.8 },
+    { "name": "Ataque de tipo", "powerMultiplier": 1.0 },
+    { "name": "Golpe cargado", "powerMultiplier": 1.4 }
+  ],
   "log": ["¡Un rattata salvaje aparece!"]
 }
 ```
 
-`POST /api/battle/:battleId/attack` resolves a single exchange: the faster active
-Pokémon (higher `speed`) strikes first, the defender counterattacks if it's still
-standing, and a fainted Pokémon is replaced by the next one with HP left. The hit
-type is the attacker's **primary type** (no move sets in this MVP); damage rolls
-in `computeDamage` with ±15% variance and a 10% chance of a 1.5× crit.
+`moves` is the same fixed list for every Pokémon in this MVP (no per-species
+movesets). The frontend runs a mini-game, then sends the chosen move index plus
+its result.
+
+#### `POST /api/battle/:battleId/attack`
+
+Body (both fields required, `400` otherwise):
+
+```json
+{ "moveIndex": 0, "outcome": "hit" }
+```
+
+| Field       | Values                          | Meaning                                                        |
+| ----------- | ------------------------------- | ------------------------------------------------------------- |
+| `moveIndex` | `0`, `1`, `2`                   | Index into `moves` (`0` ×0.8 power, `1` ×1.0, `2` ×1.4)        |
+| `outcome`   | `"miss"`, `"hit"`, `"perfect"`  | Mini-game result: `miss` = 0 damage, `hit` = normal, `perfect` = normal + guaranteed crit |
+
+Invalid `moveIndex` / `outcome` (or missing) → `400 { "error": "Movimiento o resultado inválido" }`.
+
+Turn resolution is unchanged: the faster active Pokémon (higher `speed`) strikes
+first, the defender counterattacks if it's still standing, and a fainted Pokémon
+is replaced by the next one with HP left. Only the **damage per strike** now
+depends on the move + outcome. The player's strike uses the `moveIndex`/`outcome`
+from the body; the opponent's strike uses a random move and a weighted random
+outcome (15% miss / 70% hit / 15% perfect). The hit type is still the attacker's
+**primary type**; `computeDamage` keeps its ±15% variance and 10% base crit
+chance (forced to 100% on `perfect`).
 
 Response shape:
 
 ```json
 {
   "battleId": "uuid",
-  "log": ["pikachu ataca a rattata por 12 de daño.", "rattata ataca a pikachu por 6 de daño."],
+  "log": [
+    "pikachu usa Golpe cargado ¡a la perfección! y golpea a rattata por 40 de daño (¡Crítico!).",
+    "rattata intenta Ataque de tipo pero falla el ataque."
+  ],
+  "events": [
+    { "actor": "player", "move": "Golpe cargado", "outcome": "perfect", "damage": 40, "isCrit": true, "targetFainted": true },
+    { "actor": "opponent", "move": "Ataque de tipo", "outcome": "miss", "damage": 0, "isCrit": false, "targetFainted": false }
+  ],
   "playerTeam": [ /* fighters with updated currentHp */ ],
   "opponentTeam": [ /* … */ ],
   "playerActiveIndex": 0,
@@ -169,6 +203,8 @@ Response shape:
 }
 ```
 
+- `log` is the human-readable text; `events` is one structured entry per strike
+  that landed this turn (`actor` is `"player"` or `"opponent"`).
 - `status` is `"ongoing"` until a team is wiped out, then `"win"` or `"lose"`.
 - On the final turn the profile is updated (`applyBattleResult`): `+50` xp on a
   win, `+10` on a loss, `wins`/`losses` incremented, and levels raised while
@@ -186,5 +222,5 @@ Small learning/portfolio project, paired with [pokedex-frontend](https://github.
 
 - Add tests
 - Add request rate limiting
-- Battle: move sets / multiple attacks per Pokémon (current MVP is single primary-type hit)
+- Battle: per-species movesets (the 3 moves are shared by every Pokémon in this MVP)
 - Battle: let the player switch the active Pokémon mid-fight
