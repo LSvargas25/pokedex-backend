@@ -65,3 +65,49 @@ export const updateTeam = async (userId, teamArray) => {
 
   return updated;
 };
+
+// ✅ Aplica el resultado de una batalla al perfil: suma xp, cuenta la victoria
+// o la derrota y sube de nivel tantas veces como el xp acumulado lo permita
+// (umbral de cada nivel = level * 100). No toca el equipo ni otros campos.
+export const applyBattleResult = async (userId, { won, xpGained }) => {
+  const { data: trainer, error: selectError } = await supabase
+    .from(TABLE)
+    .select("*")
+    .eq("id", userId)
+    .single();
+
+  if (selectError) {
+    throw new Error(`No se pudo leer el entrenador: ${selectError.message}`);
+  }
+
+  let level = trainer.level;
+  let xp = trainer.xp + xpGained;
+  const wins = trainer.wins + (won ? 1 : 0);
+  const losses = trainer.losses + (won ? 0 : 1);
+
+  let leveledUp = false;
+  while (xp >= level * 100) {
+    xp -= level * 100;
+    level += 1;
+    leveledUp = true;
+  }
+
+  const { data: updated, error: updateError } = await supabase
+    .from(TABLE)
+    .update({ level, xp, wins, losses })
+    .eq("id", userId)
+    .select("*")
+    .single();
+
+  if (updateError) {
+    throw new Error(`No se pudo aplicar el resultado de la batalla: ${updateError.message}`);
+  }
+
+  return {
+    level: updated.level,
+    xp: updated.xp,
+    wins: updated.wins,
+    losses: updated.losses,
+    leveledUp,
+  };
+};
