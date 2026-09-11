@@ -4,6 +4,7 @@ import { fetchPokemonInfo } from "../Detail of Pokemons/PokemonDetailService.js"
 import { computeDamage } from "./DamageCalculator.js";
 import { MOVES } from "./Moves.js";
 import { applyBattleResult } from "../Trainer/TrainerService.js";
+import { getUnlockedBetween } from "../Pokemon/RosterService.js";
 
 // Cache dedicada a sesiones de batalla, separada de la de datos de Pokémon.
 const battleCache = new NodeCache({ stdTTL: 900, checkperiod: 120, useClones: false });
@@ -198,10 +199,20 @@ export const resolveAttack = async (battleId, userId, moveIndex, outcome) => {
     const result = await applyBattleResult(userId, { won, xpGained });
     battleCache.del(key);
 
+    const unlockedPokemon =
+      won && result.leveledUp
+        ? await getUnlockedBetween(result.previousLevel, result.level)
+        : [];
+
     return {
       ...base,
       status: won ? "win" : "lose",
-      rewards: { xpGained, newLevel: result.level, leveledUp: result.leveledUp },
+      rewards: {
+        xpGained,
+        newLevel: result.level,
+        leveledUp: result.leveledUp,
+        unlockedPokemon,
+      },
     };
   }
 
