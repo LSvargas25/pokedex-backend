@@ -60,6 +60,7 @@ npm run dev            # or: npm start
 | `GET`    | `/api/pokemons`                | Paginated Pokémon list              |
 | `GET`    | `/api/pokemons/filter`         | List filtered by generation / type  |
 | `GET`    | `/api/pokemons/:idOrName`      | Full detail for one Pokémon         |
+| `GET`    | `/api/pokemon/roster`          | All 151 Kanto Pokémon with `statTotal` + `unlockLevel` (see Progressive unlocks below) |
 | `DELETE` | `/api/pokemons/cache`          | Clear the in-memory cache           |
 | `GET`    | `/api/pokemons/cache/stats`    | Cache stats                         |
 
@@ -90,14 +91,33 @@ Profile shape returned by both endpoints:
   "xpToNextLevel": 100,
   "wins": 0,
   "losses": 0,
-  "team": []
+  "team": [],
+  "unlockedPokemon": ["caterpie", "..."],
+  "nextUnlock": { "level": 5, "pokemonNames": ["machop", "..."] }
 }
 ```
 
 `xpToNextLevel` is computed on the fly as `level * 100` and is not stored.
 
+`unlockedPokemon` and `nextUnlock` come from the progressive-unlock system
+described below; both are derived from `level` on every request, not stored.
+`nextUnlock` is `null` once the trainer has unlocked every tier (level 25+).
+
 `PUT /api/trainer/team` expects exactly 3 non-empty strings in `team`, otherwise
 it returns `400 { "error": "El equipo debe tener exactamente 3 Pokémon (strings)" }`.
+It also rejects (`400`) any Pokémon not yet unlocked for the trainer's current
+level, e.g. `{ "error": "mewtwo no está desbloqueado todavía (se desbloquea en el nivel 25; tu nivel actual es 1)." }`
+— this is enforced server-side regardless of what the frontend already filtered.
+
+### Progressive unlocks
+
+The 151 Kanto Pokémon (`RosterService`) are ranked by total base stats
+(`hp + attack + defense + special-attack + special-defense + speed`), split
+into 6 roughly-equal tiers (~25-26 each), and mapped weakest-to-strongest to
+unlock levels `1, 5, 10, 15, 20, 25`. The computed roster is cached for 24h
+since it never changes. `GET /api/pokemon/roster` exposes the full list
+(`{ id, name, types, sprite, statTotal, unlockLevel }[]`) for the frontend to
+render locked/unlocked state.
 
 ### Supabase table
 
@@ -210,7 +230,10 @@ Response shape:
   win, `+10` on a loss, `wins`/`losses` incremented, and levels raised while
   `xp >= level * 100`. The session is deleted from the cache.
 - `rewards` is `null` while ongoing, otherwise
-  `{ "xpGained": 50, "newLevel": 2, "leveledUp": true }`.
+  `{ "xpGained": 50, "newLevel": 2, "leveledUp": true, "unlockedPokemon": [] }`.
+  `unlockedPokemon` is always an array (never omitted/null); it's only
+  populated when a win's level-up crosses into a new [progressive-unlock
+  tier](#progressive-unlocks) (`getUnlockedBetween(previousLevel, newLevel)`).
 - Unknown or expired `battleId` → `404 { "error": "Batalla no encontrada o expirada" }`.
   A battle that belongs to another user → `403`.
 
