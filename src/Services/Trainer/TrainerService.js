@@ -17,9 +17,21 @@ export const getOrCreateTrainer = async (supabaseUser) => {
 
   if (existing) return existing;
 
+  // Orden de preferencia para el username al crear la fila:
+  // 1) user_metadata.username -> registro con email/password (pasa por nuestro formulario)
+  // 2) user_metadata.full_name -> login con Google, es el campo típico que trae
+  // 3) user_metadata.name -> algunos logins de Google solo traen este
+  // 4) prefijo del email -> fallback final si no vino nada de lo anterior
+  const metadata = supabaseUser.user_metadata ?? {};
+  const username =
+    metadata.username ??
+    metadata.full_name ??
+    metadata.name ??
+    supabaseUser.email.split("@")[0];
+
   const nuevo = {
     id: supabaseUser.id,
-    username: supabaseUser.username,
+    username,
     level: 1,
     xp: 0,
     wins: 0,

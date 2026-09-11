@@ -23,6 +23,7 @@ export const authMiddleware = async (req, res, next) => {
       id: user.id,
       email: user.email,
       username: user.user_metadata?.username ?? user.email.split("@")[0],
+      user_metadata: user.user_metadata ?? {}, // crudo, para el fallback de username en getOrCreateTrainer (ej. login con Google)
     };
 
     next();
