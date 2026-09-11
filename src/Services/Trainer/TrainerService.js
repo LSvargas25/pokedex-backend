@@ -1,4 +1,5 @@
 import supabase from "../../Config/supabaseClient.js";
+import { getRoster, getUnlockedNames } from "../Pokemon/RosterService.js";
 
 const TABLE = "trainers";
 
@@ -39,7 +40,9 @@ export const getOrCreateTrainer = async (supabaseUser) => {
   return created;
 };
 
-// ✅ Reemplaza el equipo del entrenador. team debe tener exactamente 3 strings.
+// ✅ Reemplaza el equipo del entrenador. team debe tener exactamente 3 strings,
+// y cada uno debe estar desbloqueado para el nivel actual del entrenador
+// (nunca confiar en que el frontend ya filtró la lista).
 export const updateTeam = async (userId, teamArray) => {
   const esValido =
     Array.isArray(teamArray) &&
@@ -50,6 +53,34 @@ export const updateTeam = async (userId, teamArray) => {
     const err = new Error("El equipo debe tener exactamente 3 Pokémon (strings)");
     err.status = 400;
     throw err;
+  }
+
+  const { data: trainer, error: trainerError } = await supabase
+    .from(TABLE)
+    .select("level")
+    .eq("id", userId)
+    .single();
+
+  if (trainerError) {
+    throw new Error(`No se pudo leer el entrenador: ${trainerError.message}`);
+  }
+
+  const unlockedNames = await getUnlockedNames(trainer.level);
+  const unlockedSet = new Set(unlockedNames.map((n) => n.toLowerCase()));
+
+  for (const pokemonName of teamArray) {
+    const normalized = pokemonName.trim().toLowerCase();
+    if (!unlockedSet.has(normalized)) {
+      const roster = await getRoster();
+      const entry = roster.find((p) => p.name.toLowerCase() === normalized);
+      const err = new Error(
+        entry
+          ? `${pokemonName} no está desbloqueado todavía (se desbloquea en el nivel ${entry.unlockLevel}; tu nivel actual es ${trainer.level}).`
+          : `${pokemonName} no es un Pokémon válido del roster de Kanto (1-151).`
+      );
+      err.status = 400;
+      throw err;
+    }
   }
 
   const { data: updated, error } = await supabase
@@ -80,6 +111,7 @@ export const applyBattleResult = async (userId, { won, xpGained }) => {
     throw new Error(`No se pudo leer el entrenador: ${selectError.message}`);
   }
 
+  const previousLevel = trainer.level;
   let level = trainer.level;
   let xp = trainer.xp + xpGained;
   const wins = trainer.wins + (won ? 1 : 0);
@@ -105,6 +137,7 @@ export const applyBattleResult = async (userId, { won, xpGained }) => {
 
   return {
     level: updated.level,
+    previousLevel,
     xp: updated.xp,
     wins: updated.wins,
     losses: updated.losses,
