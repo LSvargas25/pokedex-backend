@@ -1,7 +1,8 @@
-import { fetchPokemonList } from "../Services/Pokemon List and filter/PokemonListService.js";  
+import { fetchPokemonList } from "../Services/Pokemon List and filter/PokemonListService.js";
 import { fetchPokemonInfo } from "../Services/Pokemon List and filter/PokemonInfoService.js";
-import { fetchPokemonsFiltered } from "../Services/Pokemon List and filter/PokemonFilterService.js"; 
+import { fetchPokemonsFiltered } from "../Services/Pokemon List and filter/PokemonFilterService.js";
 import { clearCache,getCacheStats } from "../Services/Cache/cache.js";
+import { getRoster } from "../Services/Pokemon/RosterService.js";
 
 
 // ✅ GET /api/pokemons
@@ -44,6 +45,17 @@ export const clearCacheController = (req, res) => {
 export const getCacheStatsController = (req, res) => {
   const stats = getCacheStats();
   res.json(stats);
+};
+
+// ✅ GET /api/pokemon/roster
+export const getPokemonRoster = async (req, res) => {
+  try {
+    const roster = await getRoster();
+    res.json(roster);
+  } catch (err) {
+    console.error("❌ Error en getPokemonRoster:", err.message);
+    res.status(500).json({ error: "Error obteniendo el roster de Pokémon" });
+  }
 };
 
 // ✅ GET /api/pokemons/:idOrName
