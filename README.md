@@ -40,6 +40,7 @@ Copy `.env.example` to `.env` and fill in the values:
 | `SUPABASE_URL`              | Supabase Project URL (`https://xxxx.supabase.co`)                       |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase `service_role` key — backend only, **never commit or expose** |
 | `SUPABASE_ANON_KEY`         | Supabase anon/publishable key (used by the frontend and local testing)  |
+| `FRONTEND_URL`               | Comma-separated list of allowed CORS origins (e.g. `http://localhost:4200,https://my-app.vercel.app`). Defaults to `http://localhost:4200` if unset — never `*`. |
 
 `.env` is git-ignored.
 
