@@ -1,5 +1,7 @@
 # Pokedex Backend
 
+[![CI](https://github.com/LSvargas25/pokedex-backend/actions/workflows/ci.yml/badge.svg)](https://github.com/LSvargas25/pokedex-backend/actions/workflows/ci.yml)
+
 A small Node.js/Express API that sits in front of the public [PokeAPI](https://pokeapi.co/), adding a caching layer so the frontend doesn't hit PokeAPI directly on every request. It also exposes a small trainer-account layer backed by [Supabase](https://supabase.com/).
 
 ## Features
@@ -52,7 +54,30 @@ cp .env.example .env   # then fill in the Supabase values
 npm run dev            # or: npm start
 ```
 
+## Tests
+
+```bash
+npm test   # node:test + supertest, no .env needed
+```
+
+Route-level tests (`test/routes.test.js`) cover the health endpoints, auth
+rejection on protected routes, CORS and 404s. They point the Supabase client at
+a closed local port, so they never touch the real project.
+
 ## API
+
+### Health (public, no auth)
+
+| Method | Endpoint        | Description                                                         |
+| ------ | --------------- | ------------------------------------------------------------------- |
+| `GET`  | `/health`       | Process is up → `200 { "status": "ok", "uptime": 12 }`             |
+| `GET`  | `/health/ready` | Runs a minimal Supabase query → `200 { "status": "ready" }` or `503` |
+
+The `Keep alive` workflow (`.github/workflows/keep-alive.yml`) calls
+`/health/ready` on the Render deployment every 2 days, with retries to cover
+Render's ~50 s cold start. That query counts as database activity, so the free
+Supabase project doesn't get paused after a week of inactivity.
+
 
 ### Pokémon (public, no auth)
 
@@ -244,7 +269,6 @@ Small learning/portfolio project, paired with [pokedex-frontend](https://github.
 
 ## Future improvements
 
-- Add tests
 - Add request rate limiting
 - Battle: per-species movesets (the 3 moves are shared by every Pokémon in this MVP)
 - Battle: let the player switch the active Pokémon mid-fight
