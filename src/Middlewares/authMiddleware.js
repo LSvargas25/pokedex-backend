@@ -21,8 +21,9 @@ export const authMiddleware = async (req, res, next) => {
     const { user } = data;
     req.user = {
       id: user.id,
-      email: user.email,
-      username: user.user_metadata?.username ?? user.email.split("@")[0],
+      email: user.email || null, // los invitados (inicio anónimo) no tienen email
+      is_anonymous: user.is_anonymous ?? false,
+      username: user.user_metadata?.username ?? user.email?.split("@")[0] ?? null,
       user_metadata: user.user_metadata ?? {}, // crudo, para el fallback de username en getOrCreateTrainer (ej. login con Google)
     };
 

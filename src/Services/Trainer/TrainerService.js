@@ -3,6 +3,26 @@ import { getRoster, getUnlockedNames } from "../Pokemon/RosterService.js";
 
 const TABLE = "trainers";
 
+// Invitados (inicio anónimo de Supabase): sin email ni nombre, se les genera uno.
+export const guestUsername = (userId) => `Invitado-${String(userId).replace(/-/g, "").slice(0, 4)}`;
+
+// Orden de preferencia para el username al crear la fila:
+// 1) user_metadata.username -> registro con email/password (pasa por nuestro formulario)
+// 2) user_metadata.full_name -> login con Google, es el campo típico que trae
+// 3) user_metadata.name -> algunos logins de Google solo traen este
+// 4) prefijo del email
+// 5) "Invitado-xxxx" -> usuario anónimo, no trae nada de lo anterior
+export const usernameFor = (supabaseUser) => {
+  const metadata = supabaseUser.user_metadata ?? {};
+  return (
+    metadata.username ||
+    metadata.full_name ||
+    metadata.name ||
+    supabaseUser.email?.split("@")[0] ||
+    guestUsername(supabaseUser.id)
+  );
+};
+
 // ✅ Busca el entrenador por id; si no existe lo crea con valores por defecto.
 export const getOrCreateTrainer = async (supabaseUser) => {
   const { data: existing, error: selectError } = await supabase
@@ -17,21 +37,10 @@ export const getOrCreateTrainer = async (supabaseUser) => {
 
   if (existing) return existing;
 
-  // Orden de preferencia para el username al crear la fila:
-  // 1) user_metadata.username -> registro con email/password (pasa por nuestro formulario)
-  // 2) user_metadata.full_name -> login con Google, es el campo típico que trae
-  // 3) user_metadata.name -> algunos logins de Google solo traen este
-  // 4) prefijo del email -> fallback final si no vino nada de lo anterior
-  const metadata = supabaseUser.user_metadata ?? {};
-  const username =
-    metadata.username ??
-    metadata.full_name ??
-    metadata.name ??
-    supabaseUser.email.split("@")[0];
-
+  // La tabla no tiene columna email: un invitado solo necesita id + username.
   const nuevo = {
     id: supabaseUser.id,
-    username,
+    username: usernameFor(supabaseUser),
     level: 1,
     xp: 0,
     wins: 0,
