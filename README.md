@@ -48,6 +48,12 @@ Copy `.env.example` to `.env` and fill in the values:
 
 `.env` is git-ignored.
 
+`SUPABASE_SERVICE_ROLE_KEY` must be the `service_role` JWT or a new `sb_secret_...`
+key. With the anon/publishable key, reads silently return nothing and creating a
+trainer fails later. The server checks the key at startup (logs
+`❌ SUPABASE_SERVICE_ROLE_KEY no es una clave service_role ...`) and
+`/health/ready` returns `503` with `"serviceRole": "invalid"`.
+
 ## Getting started
 
 ```bash
@@ -73,7 +79,7 @@ a closed local port, so they never touch the real project.
 | Method | Endpoint        | Description                                                         |
 | ------ | --------------- | ------------------------------------------------------------------- |
 | `GET`  | `/health`       | Process is up → `200 { "status": "ok", "uptime": 12 }`             |
-| `GET`  | `/health/ready` | Runs a minimal Supabase query → `200 { "status": "ready" }` or `503` |
+| `GET`  | `/health/ready` | Minimal Supabase query + service_role check → `200 { "status": "ready", "database": "ok", "serviceRole": "ok" }` or `503` |
 
 The `Keep alive` workflow (`.github/workflows/keep-alive.yml`) calls
 `/health/ready` on the Render deployment every 2 days, with retries to cover
@@ -123,6 +129,10 @@ Missing or invalid token → `401 { "error": "No autorizado" }`.
 | ------ | ------------------- | ------------------------------------------------------ |
 | `GET`  | `/api/trainer/me`   | Current trainer profile; creates the row on first call |
 | `PUT`  | `/api/trainer/team` | Replace the trainer's team (body `{ "team": [...] }`)  |
+
+Guests (Supabase anonymous sign-in) work too: they have no email or name, so
+their row gets a generated username like `Invitado-a1b2` (first 4 characters of
+the user id).
 
 Profile shape returned by both endpoints:
 
