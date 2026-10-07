@@ -1,44 +1,61 @@
-import { fetchPokemonList } from "../Services/Pokemon List and filter/PokemonListService.js";
-import { fetchPokemonInfo } from "../Services/Pokemon List and filter/PokemonInfoService.js";
-import { fetchPokemonsFiltered } from "../Services/Pokemon List and filter/PokemonFilterService.js";
-import { clearCache,getCacheStats } from "../Services/Cache/cache.js";
+import { getCacheStats } from "../Services/Cache/cache.js";
 import { getRoster } from "../Services/Pokemon/RosterService.js";
+import { KNOWN_TYPES, MAX_GENERATION, listPokemons } from "../Services/Pokemon/PokemonIndex.js";
 
+export const MAX_LIMIT = 200;
+const DEFAULT_LIMIT = 25;
 
-// ✅ GET /api/pokemons
-export const getPokemons = async (req, res) => {
-  try {
-    const limit = parseInt(req.query.limit) || 25;
-    const offset = parseInt(req.query.offset) || 0;
-    const pokemons = await fetchPokemonList(limit, offset);
-    res.json(pokemons);
-  } catch (err) {
-    console.error("❌ Error en getPokemons:", err.message);
-    res.status(500).json({ error: "Error obteniendo la lista de Pokémon" });
-  }
+const ROMAN = ["i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"];
+
+const parseNonNegativeInt = (value) => (/^\d+$/.test(String(value)) ? Number(value) : NaN);
+
+// Acepta "1" o "generation-i" (lo que aceptaba PokeAPI).
+const parseGeneration = (value) => {
+  const text = String(value).toLowerCase();
+  const n = /^\d+$/.test(text)
+    ? Number(text)
+    : ROMAN.indexOf(text.replace(/^generation-/, "")) + 1;
+  return n >= 1 && n <= MAX_GENERATION ? n : NaN;
 };
 
-// ✅ GET /api/pokemons/filter
-export const getPokemonsFiltered = async (req, res) => {
-  try {
-    const { generation, type, limit = 25, offset = 0 } = req.query;
-    const pokemons = await fetchPokemonsFiltered({
-      generation,
-      type,
-      limit: parseInt(limit),
-      offset: parseInt(offset),
-    });
-    res.json(pokemons);
-  } catch (err) {
-    console.error("❌ Error en getPokemonsFiltered:", err.message);
-    res.status(500).json({ error: "Error filtrando Pokémon" });
+/** Valida limit/offset/generation/type; devuelve { error } o los parámetros normalizados. */
+export const parseListQuery = (query) => {
+  const { limit = DEFAULT_LIMIT, offset = 0, generation, type } = query;
+
+  const parsed = { limit: parseNonNegativeInt(limit), offset: parseNonNegativeInt(offset) };
+  if (!(parsed.limit >= 1 && parsed.limit <= MAX_LIMIT)) {
+    return { error: `limit debe ser un entero entre 1 y ${MAX_LIMIT}` };
   }
+  if (Number.isNaN(parsed.offset)) {
+    return { error: "offset debe ser un entero mayor o igual a 0" };
+  }
+
+  parsed.generation = null;
+  if (generation !== undefined && generation !== "") {
+    parsed.generation = parseGeneration(generation);
+    if (Number.isNaN(parsed.generation)) {
+      return { error: `generation debe ser un número entre 1 y ${MAX_GENERATION}` };
+    }
+  }
+
+  parsed.type = null;
+  if (type !== undefined && type !== "") {
+    parsed.type = String(type).toLowerCase();
+    if (!KNOWN_TYPES.has(parsed.type)) {
+      return { error: `type desconocido: ${type}` };
+    }
+  }
+
+  return parsed;
 };
 
-// ✅ DELETE /api/pokemons/cache
-export const clearCacheController = (req, res) => {
-  clearCache();
-  res.json({ message: "Caché limpiado correctamente" });
+// ✅ GET /api/pokemons y GET /api/pokemons/filter — desde el índice en memoria
+export const getPokemons = (req, res) => {
+  const params = parseListQuery(req.query);
+  if (params.error) {
+    return res.status(400).json({ error: params.error });
+  }
+  res.json(listPokemons(params));
 };
 
 // ✅ GET /api/pokemons/cache/stats
@@ -55,17 +72,5 @@ export const getPokemonRoster = async (req, res) => {
   } catch (err) {
     console.error("❌ Error en getPokemonRoster:", err.message);
     res.status(500).json({ error: "Error obteniendo el roster de Pokémon" });
-  }
-};
-
-// ✅ GET /api/pokemons/:idOrName
-export const getPokemonDetail = async (req, res) => {
-  try {
-    const { idOrName } = req.params;
-    const info = await fetchPokemonInfo(idOrName);
-    res.json(info);
-  } catch (err) {
-    console.error("❌ Error en getPokemonDetail:", err.message);
-    res.status(500).json({ error: "Error obteniendo el detalle del Pokémon" });
   }
 };

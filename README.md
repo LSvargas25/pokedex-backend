@@ -6,8 +6,10 @@ A small Node.js/Express API that sits in front of the public [PokeAPI](https://p
 
 ## Features
 
-- Proxies Pokémon data from PokeAPI
-- In-memory caching (`node-cache`) to reduce repeated upstream calls
+- Pokémon list, filters and roster served from a committed static index
+  (`data/pokemon-index.json`): answers in milliseconds with zero calls to PokeAPI
+- Pokémon detail proxied from PokeAPI with an 8 s timeout, max 10 concurrent
+  calls, 2 retries with backoff and per-resource in-memory caching (`node-cache`)
 - Simple layered structure: routes → controllers → services
 - Trainer profiles (level, xp, wins, losses, team) stored in Supabase, protected by a Bearer-token auth middleware
 - Turn-based battle MVP: the trainer's team fights a random 3-Pokémon rival; wins/losses and xp/level progression feed back into the profile
@@ -87,8 +89,24 @@ Supabase project doesn't get paused after a week of inactivity.
 | `GET`    | `/api/pokemons/filter`         | List filtered by generation / type  |
 | `GET`    | `/api/pokemons/:idOrName`      | Full detail for one Pokémon         |
 | `GET`    | `/api/pokemon/roster`          | All 151 Kanto Pokémon with `statTotal` + `unlockLevel` (see Progressive unlocks below) |
-| `DELETE` | `/api/pokemons/cache`          | Clear the in-memory cache           |
 | `GET`    | `/api/pokemons/cache/stats`    | Cache stats                         |
+
+`/api/pokemons` and `/api/pokemons/filter` accept `limit` (1–200, default 25),
+`offset` (≥ 0, default 0), `generation` (`1`–`9` or `generation-i`…) and `type`
+(e.g. `fire`). Invalid values → `400 { "error": "..." }`. Each item is
+`{ id, name, image, types, color, colors }`, where `image` is the PokeAPI sprite
+URL built from the id. The detail endpoint returns `404` for an unknown Pokémon
+and `502` if PokeAPI doesn't answer after the retries.
+
+### Static Pokémon data
+
+`data/pokemon-index.json` holds `id`, `name`, `types`, `generation` and
+`statTotal` for every species (one default form each). It is loaded once at
+startup. To refresh it after a new generation is added to PokeAPI:
+
+```bash
+npm run build:data   # PokeAPI GraphQL; falls back to REST with concurrency 10
+```
 
 ### Trainer (auth required)
 
@@ -140,8 +158,8 @@ level, e.g. `{ "error": "mewtwo no está desbloqueado todavía (se desbloquea en
 The 151 Kanto Pokémon (`RosterService`) are ranked by total base stats
 (`hp + attack + defense + special-attack + special-defense + speed`), split
 into 6 roughly-equal tiers (~25-26 each), and mapped weakest-to-strongest to
-unlock levels `1, 5, 10, 15, 20, 25`. The computed roster is cached for 24h
-since it never changes. `GET /api/pokemon/roster` exposes the full list
+unlock levels `1, 5, 10, 15, 20, 25`. Stats come from the static index, so
+building the roster needs no network calls. `GET /api/pokemon/roster` exposes the full list
 (`{ id, name, types, sprite, statTotal, unlockLevel }[]`) for the frontend to
 render locked/unlocked state.
 

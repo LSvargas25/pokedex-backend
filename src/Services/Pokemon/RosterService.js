@@ -1,16 +1,10 @@
-import { fetchPokemonInfo } from "../Pokemon List and filter/PokemonInfoService.js";
+import { ALL_POKEMON, spriteUrl } from "./PokemonIndex.js";
 import { getCache, setCache } from "../Cache/cache.js";
 
 const POOL_SIZE = 151; // Kanto — fijo, no ampliar aquí
 const UNLOCK_LEVELS = [1, 5, 10, 15, 20, 25]; // un nivel por tramo, de más débil a más fuerte
-const STAT_NAMES = ["hp", "attack", "defense", "special-attack", "special-defense", "speed"];
 const ROSTER_CACHE_KEY = "trainer_roster_kanto";
 const ROSTER_TTL = 60 * 60 * 24; // 24h: el statTotal de un Pokémon no cambia
-
-const statValue = (stats, name) => stats.find((s) => s.name === name)?.value ?? 0;
-
-const computeStatTotal = (stats) =>
-  STAT_NAMES.reduce((sum, name) => sum + statValue(stats, name), 0);
 
 // Reparte `items` en `tiers` grupos contiguos lo más parejos posible
 // (151 / 6 -> un grupo de 26 y cinco de 25).
@@ -27,18 +21,16 @@ const splitIntoTiers = (items, tiers) => {
   return groups;
 };
 
+// El statTotal (hp + attack + defense + sp. attack + sp. defense + speed) viene
+// del índice estático: armar el roster no requiere llamadas a PokeAPI.
 const buildRoster = async () => {
-  const entries = [];
-  for (let id = 1; id <= POOL_SIZE; id++) {
-    const data = await fetchPokemonInfo(id);
-    entries.push({
-      id: data.id,
-      name: data.name,
-      types: data.types,
-      sprite: data.sprite ?? null,
-      statTotal: computeStatTotal(data.stats),
-    });
-  }
+  const entries = ALL_POKEMON.filter((p) => p.id <= POOL_SIZE).map((p) => ({
+    id: p.id,
+    name: p.name,
+    types: p.types,
+    sprite: spriteUrl(p.id),
+    statTotal: p.statTotal,
+  }));
 
   entries.sort((a, b) => a.statTotal - b.statTotal);
 
@@ -55,9 +47,7 @@ const buildRoster = async () => {
 let rosterPromise = null;
 
 // Calcula el roster completo (151 Pokémon, ordenados por statTotal ascendente,
-// con unlockLevel asignado por tramo) y lo cachea a largo plazo. Llamadas
-// concurrentes durante el primer cálculo comparten la misma promesa para no
-// disparar 151 fetches en paralelo por cada request simultáneo.
+// con unlockLevel asignado por tramo) y lo cachea a largo plazo.
 export const getRoster = async () => {
   const cached = getCache(ROSTER_CACHE_KEY);
   if (cached) return cached;

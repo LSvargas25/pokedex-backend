@@ -1,36 +1,41 @@
-import axios from "axios";
 import { getCache, setCache } from "../Cache/cache.js";
 import { mapTypesToColors } from "../Utils/typeColors.js";
+import { pokeApiGet } from "../PokeApi/pokeApiClient.js";
+import { artworkUrl, findPokemonByName } from "../Pokemon/PokemonIndex.js";
 
-const getJSONWithCache = async (cacheKey, url) => {
+// Una entrada de caché por recurso de PokeAPI (Pokémon, tipo, especie, cadena):
+// un detalle nuevo reutiliza lo que ya pidieron los anteriores.
+const getJSONWithCache = async (cacheKey, pathOrUrl) => {
   const cached = getCache(cacheKey);
   if (cached) return cached;
-  const { data } = await axios.get(url);
+  const data = await pokeApiGet(pathOrUrl);
   setCache(cacheKey, data);
   return data;
 };
 
-const getTypeRelations = async (typeName) => {
-  return getJSONWithCache(`type_rel_${typeName}`, `https://pokeapi.co/api/v2/type/${typeName}`);
-};
+const idFromUrl = (url) => url.split("/").filter(Boolean).pop();
 
 const computeWeaknesses = async (types = []) => {
-  if (!types.length) return [];
-  const mult = new Map();
+  // Evitar colisión con otros cacheKey por tipo
+  const results = await Promise.allSettled(
+    types.map((t) => getJSONWithCache(`type_rel_${t}`, `/type/${t}`))
+  );
+  const mult = new Map(); // tipo => multiplicador acumulado
 
-  for (const t of types) {
-    const rel = await getTypeRelations(t);
-    const dd = rel.damage_relations?.double_damage_from ?? [];
-    const hd = rel.damage_relations?.half_damage_from ?? [];
-    const nd = rel.damage_relations?.no_damage_from ?? [];
-
-    for (const x of dd) mult.set(x.name, (mult.get(x.name) ?? 1) * 2);
-    for (const x of hd) mult.set(x.name, (mult.get(x.name) ?? 1) * 0.5);
-    for (const x of nd) mult.set(x.name, 0);
+  for (const result of results) {
+    if (result.status !== "fulfilled") {
+      console.warn("⚠️ No se pudo cargar un tipo:", result.reason?.message);
+      continue;
+    }
+    const rel = result.value.damage_relations ?? {};
+    for (const x of rel.double_damage_from ?? []) mult.set(x.name, (mult.get(x.name) ?? 1) * 2);
+    for (const x of rel.half_damage_from ?? []) mult.set(x.name, (mult.get(x.name) ?? 1) * 0.5);
+    for (const x of rel.no_damage_from ?? []) mult.set(x.name, 0);
   }
 
+  // Solo devolver tipos con multiplicador > 1 (debilidades reales), más débiles primero
   return [...mult.entries()]
-    .filter(([_, m]) => m > 1)
+    .filter(([, m]) => m > 1)
     .sort((a, b) => b[1] - a[1])
     .map(([name]) => name);
 };
@@ -43,65 +48,61 @@ const flattenEvolutionNames = (chain) => {
     for (const nxt of node.evolves_to ?? []) walk(nxt);
   };
   walk(chain);
+  // remover null/undefined y duplicados
   return [...new Set(out.filter(Boolean))];
+};
+
+// Imagen de una especie de la cadena: si está en el índice estático se arma la URL
+// por id; si no (nombre de especie distinto al del Pokémon), se consulta en vivo.
+const getEvolutionEntry = async (name) => {
+  const known = findPokemonByName(name);
+  if (known) return { id: known.id, name, image: artworkUrl(known.id) };
+
+  const cacheKey = `pokemon_basic_${name}`;
+  const cached = getCache(cacheKey);
+  if (cached) return cached;
+
+  const species = await getJSONWithCache(`species_name_${name}`, `/pokemon-species/${name}`);
+  const id = Number(species.id);
+  const entry = { id, name, image: artworkUrl(id) };
+  setCache(cacheKey, entry);
+  return entry;
 };
 
 const getEvolutionWithImages = async (speciesUrl) => {
   if (!speciesUrl) return [];
-  const speciesId = speciesUrl.split("/").filter(Boolean).pop();
-  const species = await getJSONWithCache(`species_${speciesId}`, speciesUrl);
+  const species = await getJSONWithCache(`species_${idFromUrl(speciesUrl)}`, speciesUrl);
   const chainUrl = species?.evolution_chain?.url;
   if (!chainUrl) return [];
 
-  const chainId = chainUrl.split("/").filter(Boolean).pop();
-  const chain = await getJSONWithCache(`evo_chain_${chainId}`, chainUrl);
+  const chain = await getJSONWithCache(`evo_chain_${idFromUrl(chainUrl)}`, chainUrl);
   const names = flattenEvolutionNames(chain?.chain);
 
-  const evolutions = [];
-  for (const name of names) {
-    const cacheKey = `pokemon_basic_${name}`;
-    let poke = getCache(cacheKey);
-    if (!poke) {
-      const { data } = await axios.get(`https://pokeapi.co/api/v2/pokemon/${name}`);
-      poke = {
-        id: data.id,
-        name: data.name,
-        image: data.sprites?.other?.["official-artwork"]?.front_default ?? data.sprites?.front_default ?? null,
-      };
-      setCache(cacheKey, poke);
-    }
-    evolutions.push(poke);
-  }
-  return evolutions;
+  const results = await Promise.allSettled(names.map(getEvolutionEntry));
+  return results.filter((r) => r.status === "fulfilled").map((r) => r.value);
 };
 
 export const fetchPokemonInfo = async (idOrName) => {
-  const cacheKey = `pokemon_info_${idOrName}`;
+  const key = String(idOrName).toLowerCase();
+  const cacheKey = `pokemon_info_${key}`;
   const cached = getCache(cacheKey);
-  if (cached) {
-    console.log(`💾 Info de ${idOrName} desde caché`);
-    return cached;
-  }
+  if (cached) return cached;
 
-  console.log(`🔄 Cargando info detallada de ${idOrName}...`);
-  const { data } = await axios.get(`https://pokeapi.co/api/v2/pokemon/${idOrName}`);
+  const data = await pokeApiGet(`/pokemon/${key}`);
 
   const types = data.types.map((t) => t.type.name);
   const colors = mapTypesToColors(types);
 
-  let weaknesses = [];
-  try {
-    weaknesses = await computeWeaknesses(types);
-  } catch (e) {
-    console.warn("⚠️ No se pudieron calcular las desventajas:", e?.message);
+  // Debilidades y evolución son extras: si fallan, el detalle sale igual sin ellos.
+  const [weaknesses, evolution] = await Promise.allSettled([
+    computeWeaknesses(types),
+    getEvolutionWithImages(data?.species?.url),
+  ]);
+  if (weaknesses.status === "rejected") {
+    console.warn("⚠️ No se pudieron calcular las desventajas:", weaknesses.reason?.message);
   }
-
-  let evolution = [];
-  try {
-    const speciesUrl = data?.species?.url;
-    evolution = await getEvolutionWithImages(speciesUrl);
-  } catch (e) {
-    console.warn("⚠️ No se pudo obtener la evolución:", e?.message);
+  if (evolution.status === "rejected") {
+    console.warn("⚠️ No se pudo obtener la evolución:", evolution.reason?.message);
   }
 
   const info = {
@@ -109,7 +110,7 @@ export const fetchPokemonInfo = async (idOrName) => {
     name: data.name,
     height: data.height,
     weight: data.weight,
-    image: data.sprites.other["official-artwork"].front_default,
+    image: data.sprites?.other?.["official-artwork"]?.front_default ?? artworkUrl(data.id),
     sprite: data.sprites?.front_default ?? null, // sprite pixelado, lo usa la batalla para dibujar
     types,
     color: colors[0] ?? null,
@@ -122,10 +123,13 @@ export const fetchPokemonInfo = async (idOrName) => {
       name: s.stat.name,
       value: s.base_stat,
     })),
-    weaknesses,
-    evolution,
+    weaknesses: weaknesses.value ?? [], // ← array de strings
+    evolution: evolution.value ?? [], // ← [{ id, name, image }]
   };
 
+  // Se cachea bajo id y nombre: la batalla pide por nombre, el frontend a veces por id.
   setCache(cacheKey, info);
+  setCache(`pokemon_info_${info.id}`, info);
+  setCache(`pokemon_info_${info.name}`, info);
   return info;
 };
