@@ -4,7 +4,7 @@ import request from "supertest";
 import app from "../src/app.js";
 import supabase from "../src/Config/supabaseClient.js";
 import { describeKey, staticKeyProblem, SERVICE_ROLE_ERROR } from "../src/Config/serviceRoleCheck.js";
-import { getOrCreateTrainer, guestUsername } from "../src/Services/Trainer/TrainerService.js";
+import { getOrCreateTrainer, guestUsername, usernameFor } from "../src/Services/Trainer/TrainerService.js";
 
 afterEach(() => mock.restoreAll());
 
@@ -42,6 +42,71 @@ test("getOrCreateTrainer crea un invitado sin email con username generado", asyn
   assert.equal(inserted.length, 1);
   assert.deepEqual(Object.keys(inserted[0]).sort(), ["id", "level", "losses", "team", "username", "wins", "xp"]);
   assert.ok(!("email" in inserted[0]), "la tabla trainers no tiene columna email");
+});
+
+test('usuario anónimo con email "" e is_anonymous: true recibe "Invitado-" + 4 caracteres del id', async () => {
+  const inserted = mockEmptyTrainersTable();
+
+  const trainer = await getOrCreateTrainer({
+    id: "f00dbabe-1111-4111-8111-111111111111",
+    email: "",
+    is_anonymous: true,
+    user_metadata: {},
+  });
+
+  assert.equal(inserted[0].username, "Invitado-f00d");
+  assert.equal(trainer.username, "Invitado-f00d");
+});
+
+test("valores en blanco en metadata o email no cuentan como username", () => {
+  assert.equal(
+    usernameFor({ id: ANON_USER.id, email: "  ", user_metadata: { username: "", full_name: "   ", name: "" } }),
+    "Invitado-a1b2"
+  );
+  assert.equal(usernameFor({ id: ANON_USER.id, email: "", user_metadata: { full_name: "  Ash Ketchum " } }), "Ash Ketchum");
+});
+
+test("una fila existente con username vacío se corrige al leerla", async () => {
+  const updates = [];
+  mock.method(supabase, "from", () => ({
+    select: () => ({
+      eq: () => ({
+        maybeSingle: async () => ({ data: { id: ANON_USER.id, username: "", level: 3 }, error: null }),
+      }),
+    }),
+    update: (patch) => {
+      updates.push(patch);
+      return {
+        eq: () => ({
+          select: () => ({ single: async () => ({ data: { id: ANON_USER.id, level: 3, ...patch }, error: null }) }),
+        }),
+      };
+    },
+  }));
+
+  const trainer = await getOrCreateTrainer(ANON_USER);
+
+  assert.deepEqual(updates, [{ username: "Invitado-a1b2" }]);
+  assert.equal(trainer.username, "Invitado-a1b2");
+  assert.equal(trainer.level, 3, "el resto del progreso se conserva");
+});
+
+test("una fila con username válido no se toca", async () => {
+  let updated = false;
+  mock.method(supabase, "from", () => ({
+    select: () => ({
+      eq: () => ({ maybeSingle: async () => ({ data: { id: ANON_USER.id, username: "Misty" }, error: null }) }),
+    }),
+    update: () => {
+      updated = true;
+      throw new Error("no debería actualizar");
+    },
+  }));
+
+  const trainer = await getOrCreateTrainer(ANON_USER);
+
+  assert.equal(trainer.username, "Misty");
+  assert.equal(updated, false);
 });
 
 test("GET /api/trainer/me funciona para un usuario anónimo", async () => {
