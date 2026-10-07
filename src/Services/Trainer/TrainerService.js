@@ -6,6 +6,11 @@ const TABLE = "trainers";
 // Invitados (inicio anónimo de Supabase): sin email ni nombre, se les genera uno.
 export const guestUsername = (userId) => `Invitado-${String(userId).replace(/-/g, "").slice(0, 4)}`;
 
+// Primer valor que sea texto no vacío (sin contar espacios). Los anónimos de
+// Supabase traen email "" y metadata vacía: con ?? quedaba username "".
+const firstNonBlank = (...values) =>
+  values.find((v) => typeof v === "string" && v.trim() !== "")?.trim();
+
 // Orden de preferencia para el username al crear la fila:
 // 1) user_metadata.username -> registro con email/password (pasa por nuestro formulario)
 // 2) user_metadata.full_name -> login con Google, es el campo típico que trae
@@ -15,12 +20,31 @@ export const guestUsername = (userId) => `Invitado-${String(userId).replace(/-/g
 export const usernameFor = (supabaseUser) => {
   const metadata = supabaseUser.user_metadata ?? {};
   return (
-    metadata.username ||
-    metadata.full_name ||
-    metadata.name ||
-    supabaseUser.email?.split("@")[0] ||
-    guestUsername(supabaseUser.id)
+    firstNonBlank(
+      metadata.username,
+      metadata.full_name,
+      metadata.name,
+      supabaseUser.email?.split("@")[0]
+    ) ?? guestUsername(supabaseUser.id)
   );
+};
+
+// Filas creadas con username vacío (versión anterior con invitados): se
+// corrigen la próxima vez que se leen.
+const repairBlankUsername = async (trainer, supabaseUser) => {
+  const username = usernameFor(supabaseUser);
+  const { data: fixed, error } = await supabase
+    .from(TABLE)
+    .update({ username })
+    .eq("id", trainer.id)
+    .select("*")
+    .single();
+
+  if (error) {
+    console.warn(`⚠️ No se pudo corregir el username vacío de ${trainer.id}: ${error.message}`);
+    return { ...trainer, username };
+  }
+  return fixed;
 };
 
 // ✅ Busca el entrenador por id; si no existe lo crea con valores por defecto.
@@ -35,7 +59,9 @@ export const getOrCreateTrainer = async (supabaseUser) => {
     throw new Error(`No se pudo leer el entrenador: ${selectError.message}`);
   }
 
-  if (existing) return existing;
+  if (existing) {
+    return firstNonBlank(existing.username) ? existing : repairBlankUsername(existing, supabaseUser);
+  }
 
   // La tabla no tiene columna email: un invitado solo necesita id + username.
   const nuevo = {
