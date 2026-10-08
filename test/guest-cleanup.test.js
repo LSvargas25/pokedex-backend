@@ -17,6 +17,11 @@ let savedSecret;
 beforeEach(() => {
   savedSecret = process.env.CRON_SECRET;
   process.env.CRON_SECRET = SECRET;
+  // El controller loguea un resumen por request. Esa salida comparte stdout con el
+  // canal serializado del runner de node:test y a veces lo corrompe
+  // ("Unable to deserialize cloned data"): se silencia en estos tests.
+  mock.method(console, "log", () => {});
+  mock.method(console, "error", () => {});
 });
 afterEach(() => {
   mock.restoreAll();
