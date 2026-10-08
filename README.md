@@ -45,6 +45,7 @@ Copy `.env.example` to `.env` and fill in the values:
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase `service_role` key — backend only, **never commit or expose** |
 | `SUPABASE_ANON_KEY`         | Supabase anon/publishable key (used by the frontend and local testing)  |
 | `FRONTEND_URL`               | Comma-separated list of allowed CORS origins (e.g. `http://localhost:4200,https://my-app.vercel.app`). Defaults to `http://localhost:4200` if unset — never `*`. |
+| `CRON_SECRET`                | Shared secret for `POST /admin/cleanup-guests` (header `X-Cron-Secret`). Unset → the endpoint answers `503` (disabled). Must match the `CRON_SECRET` GitHub Actions secret. |
 
 `.env` is git-ignored.
 
@@ -86,6 +87,16 @@ The `Keep alive` workflow (`.github/workflows/keep-alive.yml`) calls
 Render's ~50 s cold start. That query counts as database activity, so the free
 Supabase project doesn't get paused after a week of inactivity.
 
+
+### Admin (cron secret, no user token)
+
+| Method | Endpoint                 | Description |
+| ------ | ------------------------ | ----------- |
+| POST   | `/admin/cleanup-guests`  | Deletes Supabase anonymous users (guests) created more than 30 days ago, and their `trainers` row. `?dryRun=true` only counts. Requires `X-Cron-Secret: <CRON_SECRET>`: wrong/missing → `401`, `CRON_SECRET` unset on the server → `503`. Returns `{ scanned, matched, deleted, failed, cutoff, dryRun }`; `207` if some deletions failed |
+
+The `Cleanup guests` workflow (`.github/workflows/cleanup-guests.yml`) calls it
+every Monday at 14:00 UTC, with retries while Render wakes up. It can also be
+run by hand from the Actions tab, with a *dry run* checkbox.
 
 ### Pokémon (public, no auth)
 

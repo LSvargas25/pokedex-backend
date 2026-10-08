@@ -4,6 +4,7 @@ import healthRoutes from "./Routes/HealthRoutes.js";
 import pokemonRoutes from "./Routes/PokemonRoutes.js";
 import trainerRoutes from "./Routes/TrainerRoutes.js";
 import battleRoutes from "./Routes/BattleRoutes.js";
+import adminRoutes from "./Routes/AdminRoutes.js";
 
 const app = express();
 
@@ -19,5 +20,6 @@ app.use(healthRoutes);
 app.use(pokemonRoutes);
 app.use(trainerRoutes);
 app.use(battleRoutes);
+app.use(adminRoutes);
 
 export default app;
